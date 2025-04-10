@@ -1,6 +1,8 @@
-# Three.js GLB Model Viewer
+# Scenery-Mini-Project
 
-A feature-rich 3D model viewer built with Three.js that supports both orbit and FPV drone-style controls with dynamic sky lighting and environment settings.
+This Three.js viewer showcases a low-poly 3D scenery with intuitive camera controls. Users can explore the minimalist environment through either orbit navigation or immersive FPV drone-style movement while experiencing dynamic lighting conditions. The project demonstrates how even simplified 3D models can create compelling visual experiences when combined with advanced rendering techniques.
+
+![Scenery mini-project img](https://github.com/user-attachments/assets/36f665b3-6b67-43c3-8c32-37fe2ad5f539)
 
 ## Features
 
@@ -12,11 +14,6 @@ A feature-rich 3D model viewer built with Three.js that supports both orbit and 
   - Realistic sky rendering with physically-based atmospheric scattering
   - Adjustable sun position, turbidity, and scattering parameters
   - Preset environments (Default, Sunset, Dawn, Night, Midday)
-  
-- **Advanced Rendering**:
-  - PBR materials with HDR environment reflections
-  - Realistic shadows with PCF soft shadow mapping
-  - High-quality antialiasing for smooth edges
   
 - **Performance Optimized**:
   - DRACO mesh compression support for faster loading
@@ -34,19 +31,16 @@ A feature-rich 3D model viewer built with Three.js that supports both orbit and 
 - **Blender 3D**: Used for model preparation and optimization
 - **GLTFLoader**: For loading GLB/GLTF format models
 - **DRACOLoader**: For decompressing compressed models
-- **OrbitControls**: For standard 3D navigation
-- **FlyControls**: For FPV drone-style navigation
 - **RGBELoader**: For loading HDR environment maps
-- **Sky**: For realistic sky rendering
 - **lil-gui**: For user interface controls
 
 ## Model Information
 
 The 3D model used in this viewer is sourced from TurboSquid and has been optimized using Blender 3D.
 
-**Original Model**: [View on TurboSquid](https://www.turbosquid.com/3d-models/model-id-here)
+**Original Model**: [View on TurboSquid](https://www.turbosquid.com/3d-models/3d-medieval-stronghold-and-village-model-2250878)
 
-**Model Download Link**: [Download Scene.glb from Google Drive](https://drive.google.com/file/d/1AbC123xYz/view?usp=sharing)
+**Model Download Link**: [Download Scene.glb from Google Drive](https://drive.google.com/file/d/1fb16rIeUBkwViebeKwLjbg0sHjp9e8fa/view?usp=sharing)
 
 > **Note**: Due to file size limitations, the model cannot be hosted on GitHub. Please download the model from the Google Drive link above before running the application.
 
@@ -73,15 +67,3 @@ This viewer works best in modern browsers with good WebGL support:
 - Firefox
 - Edge
 - Safari (WebGL 2.0 support required)
-
-## License
-
-This project is provided under the MIT License.
-
-The 3D model is subject to the licensing terms provided by TurboSquid.
-
-## Credits
-
-- Three.js team for the incredible 3D library
-- Example HDR environment map from Three.js examples
-- Original 3D model from TurboSquid
