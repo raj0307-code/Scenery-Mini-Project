@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js GLB Model Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.156.1/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.156.1/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { FlyControls } from 'three/addons/controls/FlyControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+        import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+        import { Sky } from 'three/addons/objects/Sky.js';
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // Set camera much higher above the scene
+        const randomZ = 15 + Math.random() * 6;
+        camera.position.set(0, 10, randomZ);
+        camera.lookAt(0, 0, 0);
+
+        // Renderer setup
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 0.5;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // FPV Drone Controls
+        let controls;
+        let clock;
+        let controlsType = 'fly'; // 'fly' or 'orbit'
+
+        // Initialize fly controls
+        function initFlyControls() {
+            // Remove orbit controls if they exist
+            if (controls && controls.dispose) {
+                controls.dispose();
+            }
+
+            // Setup FlyControls
+            controls = new FlyControls(camera, renderer.domElement);
+            controls.movementSpeed = 8;
+            controls.rollSpeed = 0.8;
+            controls.dragToLook = true;
+            controls.autoForward = false;
+
+            // Instructions overlay
+            if (!document.getElementById('instructions')) {
+                const instructions = document.createElement('div');
+                instructions.id = 'instructions';
+                instructions.innerHTML = `
+                    <div style="position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.5); color: white; padding: 10px; border-radius: 5px; font-family: Arial; font-size: 14px;">
+                        <h3 style="margin: 0 0 10px 0;">FPV Drone Controls:</h3>
+                        <p>WASD / Arrows: Move forward/backward, strafe left/right</p>
+                        <p>R/F: Move up/down</p>
+                        <p>Q/E: Roll left/right</p>
+                        <p>Mouse Drag: Look around</p>
+                    </div>
+                `;
+                document.body.appendChild(instructions);
+            }
+
+            // Initialize clock for delta time
+            if (!clock) {
+                clock = new THREE.Clock();
+            }
+        }
+
+        // Initialize orbit controls (for switching back if needed)
+        function initOrbitControls() {
+            // Remove fly controls if they exist
+            if (controls && controls.dispose) {
+                controls.dispose();
+            }
+
+            // Remove instructions
+            const instructions = document.getElementById('instructions');
+            if (instructions) {
+                instructions.remove();
+            }
+
+            // Setup OrbitControls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.1;
+            controls.rotateSpeed = 0.5;
+            controls.panSpeed = 0.5;
+            controls.zoomSpeed = 0.7;
+            controls.target.set(0, 1, 0);
+            controls.maxPolarAngle = Math.PI / 1.8;
+            controls.minDistance = 2;
+            controls.maxDistance = 15;
+            controls.update();
+        }
+
+        // Natural lighting setup
+        // 1. Environment map for realistic reflections
+        new RGBELoader()
+            .setPath('https://threejs.org/examples/textures/equirectangular/')
+            .load('royal_esplanade_1k.hdr', function (texture) {
+                texture.mapping = THREE.EquirectangularReflectionMapping;
+                scene.environment = texture;
+                scene.background = new THREE.Color(0x555555);
+                renderer.toneMappingExposure = 0.5;
+
+                // Initialize sky after environment is loaded
+                initSky();
+
+                // Load the model after environment is ready
+                init();
+            });
+
+        // 2. Additional lighting for better visibility
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(5, 10, 7.5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        scene.add(directionalLight);
+
+        // Helper to visualize light direction (optional)
+        // const helper = new THREE.DirectionalLightHelper(directionalLight, 5);
+        // scene.add(helper);
+
+        // Ground plane (optional)
+        const groundGeometry = new THREE.PlaneGeometry(10, 10);
+        const groundMaterial = new THREE.MeshStandardMaterial({
+            color: 0xcccccc,
+            roughness: 0.8,
+            metalness: 0.2
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Sky setup
+        let sky, sun;
+
+        function initSky() {
+            // Add Sky
+            sky = new Sky();
+            sky.scale.setScalar(450000);
+            scene.add(sky);
+
+            // Add Sun
+            sun = new THREE.Vector3();
+
+            // Set default sun position
+            const effectController = {
+                turbidity: 10,
+                rayleigh: 3,
+                mieCoefficient: 0.005,
+                mieDirectionalG: 0.7,
+                elevation: 2,
+                azimuth: 180,
+                exposure: renderer.toneMappingExposure
+            };
+
+            // Apply sky settings
+            const uniforms = sky.material.uniforms;
+            uniforms['turbidity'].value = effectController.turbidity;
+            uniforms['rayleigh'].value = effectController.rayleigh;
+            uniforms['mieCoefficient'].value = effectController.mieCoefficient;
+            uniforms['mieDirectionalG'].value = effectController.mieDirectionalG;
+
+            // Update sun position
+            updateSun(effectController);
+
+            // Set sky as background
+            scene.background = null; // Reset background before setting sky
+        }
+
+        function updateSun(effectController) {
+            const phi = THREE.MathUtils.degToRad(90 - effectController.elevation);
+            const theta = THREE.MathUtils.degToRad(effectController.azimuth);
+
+            sun.setFromSphericalCoords(1, phi, theta);
+
+            sky.material.uniforms['sunPosition'].value.copy(sun);
+        }
+
+        // Load GLB Model
+        function loadModel() {
+            const loader = new GLTFLoader();
+
+            // Add DRACOLoader for compressed models
+            const dracoLoader = new DRACOLoader();
+            dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+            dracoLoader.setDecoderConfig({ type: 'js' });
+            loader.setDRACOLoader(dracoLoader);
+
+            const modelUrl = './Scene.glb';
+
+            loader.load(modelUrl, function (gltf) {
+                const model = gltf.scene;
+                model.position.set(0, 0, 0);
+                model.scale.set(1, 1, 1); // Adjust scale if needed
+
+                // Enable shadows for all meshes in the model
+                model.traverse(function (child) {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+
+                        // Optimize materials
+                        if (child.material) {
+                            child.material.needsUpdate = true;
+                            // Use lower precision normal maps when available
+                            if (child.material.normalMap) {
+                                child.material.normalMapType = THREE.TangentSpaceNormalMap;
+                            }
+                        }
+                    }
+                });
+
+                scene.add(model);
+            },
+                function (xhr) {
+                    console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+                },
+                function (error) {
+                    console.error('An error happened', error);
+                });
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', function () {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update controls based on type
+            if (controlsType === 'fly') {
+                controls.update(clock.getDelta());
+            } else {
+                controls.update();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Add GUI controls
+        function setupGUI() {
+            const gui = new GUI();
+
+            // Control type selector
+            const controlsFolder = gui.addFolder('Controls');
+            const controlParams = {
+                type: 'fly',
+                resetPosition: function () {
+                    const resetZ = 10 + Math.random() * 5;
+                    camera.position.set(0, 10, resetZ);
+                    camera.lookAt(0, 0, 0);
+                    if (controlsType === 'orbit') {
+                        controls.target.set(0, 0, 0);
+                        controls.update();
+                    }
+                }
+            };
+
+            controlsFolder.add(controlParams, 'type', ['fly', 'orbit']).name('Control Type').onChange((value) => {
+                controlsType = value;
+                if (value === 'fly') {
+                    initFlyControls();
+                } else {
+                    initOrbitControls();
+                }
+            });
+
+            // FPV drone parameters
+            const flyParamsFolder = controlsFolder.addFolder('FPV Parameters');
+            const flyParams = {
+                movementSpeed: 5,
+                rollSpeed: 0.5,
+                dragToLook: true,
+                autoForward: false
+            };
+
+            flyParamsFolder.add(flyParams, 'movementSpeed', 1, 20).name('Movement Speed').onChange((value) => {
+                if (controlsType === 'fly') {
+                    controls.movementSpeed = value;
+                }
+            });
+
+            flyParamsFolder.add(flyParams, 'rollSpeed', 0.1, 2).name('Roll Speed').onChange((value) => {
+                if (controlsType === 'fly') {
+                    controls.rollSpeed = value;
+                }
+            });
+
+            flyParamsFolder.add(flyParams, 'dragToLook').name('Drag to Look').onChange((value) => {
+                if (controlsType === 'fly') {
+                    controls.dragToLook = value;
+                }
+            });
+
+            flyParamsFolder.add(flyParams, 'autoForward').name('Auto Forward').onChange((value) => {
+                if (controlsType === 'fly') {
+                    controls.autoForward = value;
+                }
+            });
+
+            // Camera settings
+            const cameraFolder = gui.addFolder('Camera');
+
+            // Focal length (FOV) control
+            cameraFolder.add(camera, 'fov', 10, 120).name('Focal Length (FOV)').onChange(() => {
+                camera.updateProjectionMatrix();
+            });
+
+            // Reset button
+            controlsFolder.add(controlParams, 'resetPosition').name('Reset Position');
+
+            // Sky & Sun controls
+            const skyFolder = gui.addFolder('Sky');
+            const skySettings = {
+                turbidity: 10,
+                rayleigh: 3,
+                mieCoefficient: 0.005,
+                mieDirectionalG: 0.7,
+                elevation: 2,
+                azimuth: 180,
+                exposure: renderer.toneMappingExposure,
+                showSky: true
+            };
+
+            skyFolder.add(skySettings, 'turbidity', 0.0, 20.0, 0.1).onChange(value => {
+                sky.material.uniforms['turbidity'].value = value;
+            });
+
+            skyFolder.add(skySettings, 'rayleigh', 0.0, 4, 0.001).onChange(value => {
+                sky.material.uniforms['rayleigh'].value = value;
+            });
+
+            skyFolder.add(skySettings, 'mieCoefficient', 0.0, 0.1, 0.001).onChange(value => {
+                sky.material.uniforms['mieCoefficient'].value = value;
+            });
+
+            skyFolder.add(skySettings, 'mieDirectionalG', 0.0, 1, 0.001).onChange(value => {
+                sky.material.uniforms['mieDirectionalG'].value = value;
+            });
+
+            skyFolder.add(skySettings, 'elevation', -10, 90, 0.1).onChange(value => {
+                skySettings.elevation = value;
+                updateSun(skySettings);
+            });
+
+            skyFolder.add(skySettings, 'azimuth', -180, 180, 0.1).onChange(value => {
+                skySettings.azimuth = value;
+                updateSun(skySettings);
+            });
+
+            skyFolder.add(skySettings, 'exposure', 0, 1, 0.01).onChange(value => {
+                renderer.toneMappingExposure = value;
+            });
+
+            skyFolder.add(skySettings, 'showSky').onChange(value => {
+                if (value) {
+                    scene.background = null; // This makes the sky visible
+                } else {
+                    // Use a solid color or the HDR as background
+                    scene.background = new THREE.Color(0x333333);
+                }
+            });
+
+            // Add preset options
+            const presetOptions = {
+                preset: 'Default',
+                applyPreset: function () {
+                    switch (this.preset) {
+                        case 'Default':
+                            this.updateSkySettings(10, 3, 0.005, 0.7, 2, 180);
+                            break;
+                        case 'Sunset':
+                            this.updateSkySettings(3, 4, 0.01, 0.98, 2, 20);
+                            break;
+                        case 'Dawn':
+                            this.updateSkySettings(5, 2, 0.005, 0.8, 4, 125);
+                            break;
+                        case 'Night':
+                            this.updateSkySettings(20, 0.2, 0.01, 0.8, -2, 180);
+                            break;
+                        case 'Midday':
+                            this.updateSkySettings(6, 1, 0.005, 0.9, 60, 180);
+                            break;
+                    }
+                },
+                updateSkySettings: function (turbidity, rayleigh, mieCoefficient, mieG, elevation, azimuth) {
+                    skySettings.turbidity = turbidity;
+                    skySettings.rayleigh = rayleigh;
+                    skySettings.mieCoefficient = mieCoefficient;
+                    skySettings.mieDirectionalG = mieG;
+                    skySettings.elevation = elevation;
+                    skySettings.azimuth = azimuth;
+
+                    // Update GUI controls
+                    for (const controller of skyFolder.controllers) {
+                        controller.updateDisplay();
+                    }
+
+                    // Apply values to sky
+                    sky.material.uniforms['turbidity'].value = turbidity;
+                    sky.material.uniforms['rayleigh'].value = rayleigh;
+                    sky.material.uniforms['mieCoefficient'].value = mieCoefficient;
+                    sky.material.uniforms['mieDirectionalG'].value = mieG;
+                    updateSun(skySettings);
+                }
+            };
+
+            skyFolder.add(presetOptions, 'preset', [
+                'Default', 'Sunset', 'Dawn', 'Night', 'Midday'
+            ]).name('Presets');
+
+            skyFolder.add(presetOptions, 'applyPreset').name('Apply Preset');
+
+            controlsFolder.open();
+            flyParamsFolder.open();
+            skyFolder.open();
+
+            return gui;
+        }
+
+        // Load model first, then setup GUI after scene is ready
+        function init() {
+            loadModel();
+            // Initialize FPV controls by default
+            initFlyControls();
+            setupGUI();
+
+            // Start animation loop
+            animate();
+        }
+    </script>
+</body>
+
+</html>
