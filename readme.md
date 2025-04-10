@@ -22,7 +22,6 @@ This Three.js viewer showcases a low-poly 3D scenery with intuitive camera contr
 
 - **User Interface**:
   - Comprehensive GUI controls for all settings
-  - Responsive design that works on various screen sizes
   - Control overlay with keyboard shortcuts
 
 ## Technology Stack
